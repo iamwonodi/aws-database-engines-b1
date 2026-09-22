@@ -1,0 +1,110 @@
+name: Deploy
+
+# Publishes the engines and applies them on development's database host.
+#
+#   1. validate      the same checks as the pull request
+#   2. plan          before touching anything, so a Terraform error stops the run
+#   3. mirror        each active engine's image into ECR, pinned by digest
+#   4. publish       engine folders first, registry.json last
+#   5. update        core's database-update document on the database host
+#   6. apply         open or close the ports and publish them
+#
+# The ports change only after the host has acted: a newly active engine is
+# running before services can reach or discover it, and a deactivated one is
+# stopped before its port closes.
+#
+# The plan is made here, at merge, rather than carried from the pull request:
+# it depends only on registry.json and the platform contract, and the pull
+# request's plan shows the same change.
+#
+# Runs under the development GitHub Environment (required reviewers, main only).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "database/**"
+      - "infrastructure/**"
+      - "scripts/ci/**"
+      - ".terraform-version"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: database-engines-development
+  cancel-in-progress: false
+
+jobs:
+
+  deploy:
+    name: Deploy (development)
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Validate Engine Definitions
+        run: bash scripts/ci/validate-engines.sh database
+
+      - name: Refuse Placeholders
+        run: bash scripts/ci/check-placeholders.sh infrastructure/development
+
+      - name: Read Project
+        run: |
+          PROJECT_NAME="$(sed -n 's/^[[:space:]]*project_name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' infrastructure/development/terraform.tfvars)"
+          echo "PROJECT_NAME=${PROJECT_NAME}" >> "${GITHUB_ENV}"
+          echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Read Platform Contract
+        run: bash scripts/ci/read-contract.sh "${PROJECT_NAME}" "${{ vars.AWS_REGION }}" >> "${GITHUB_ENV}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/development init -input=false -lockfile=readonly
+
+      - name: Terraform Plan
+        run: terraform -chdir=infrastructure/development plan -input=false -out=tfplan
+
+      - name: Mirror Engine Images
+        run: bash scripts/ci/mirror-images.sh database "${ECR_REGISTRY}" "${{ vars.AWS_REGION }}" engine-images.env
+
+      - name: Publish Engines
+        run: bash scripts/ci/publish-engines.sh database engine-images.env "${DEPLOY_BUCKET}" "${{ vars.AWS_REGION }}"
+
+      - name: Apply On The Database Host
+        run: bash scripts/ci/send-update.sh "${UPDATE_DOCUMENT}" "${PROJECT_NAME}" "${{ vars.AWS_REGION }}"
+
+      - name: Terraform Apply
+        run: terraform -chdir=infrastructure/development apply -input=false tfplan
+
+      - name: Summary
+        run: |
+          {
+            echo "Deployed database engines to **development** from \`${GITHUB_SHA}\`."
+            echo
+            echo "| Engine | Port | Active |"
+            echo "| --- | --- | --- |"
+            jq -r 'to_entries[] | "| \(.key) | \(.value.port) | \(.value.active != false) |"' database/registry.json
+            if [[ -s engine-images.env ]]; then
+              echo
+              echo "Images:"
+              sed 's/^/- /' engine-images.env
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,75 @@
+name: Plan
+
+# Shows, on the pull request, which engine ports would open or close. Read-only:
+# runs under the development-plan GitHub Environment with the same role, but
+# only plans. The plan is written to the run's summary.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "database/**"
+      - "infrastructure/**"
+      - ".terraform-version"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+
+  plan:
+    name: Plan (development)
+    runs-on: ubuntu-latest
+
+    # A fork's pull request gets no OIDC token for this repository's role.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    environment: development-plan
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Validate Engine Definitions
+        run: bash scripts/ci/validate-engines.sh database
+
+      - name: Refuse Placeholders
+        run: bash scripts/ci/check-placeholders.sh infrastructure/development
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/development init -input=false -lockfile=readonly
+
+      - name: Terraform Plan
+        run: |
+          terraform -chdir=infrastructure/development plan -input=false -lock=false -no-color -out=tfplan | tee plan.txt
+
+      - name: Summary
+        run: |
+          {
+            echo "### Engine ports: plan for development"
+            echo '```'
+            # The step summary holds 1 MiB; a plan here is a few kilobytes.
+            sed -n '/Terraform will perform\|No changes/,$p' plan.txt | head -c 60000
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

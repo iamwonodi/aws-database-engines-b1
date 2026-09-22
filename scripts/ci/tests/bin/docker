@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Fake docker for offline tests. Every call is appended to $FAKE_LOG.
+#   FAKE_DIGEST           digest "buildx imagetools inspect" reports (default a fixed sha256)
+#   FAKE_INSPECT_FAIL     makes "buildx imagetools inspect" fail (tag does not exist)
+#   FAKE_RENDER_FAIL      makes "compose ... config" fail
+[[ -n "${FAKE_LOG:-}" ]] && printf 'docker %s\n' "$*" >> "${FAKE_LOG}"
+case "$1" in
+  buildx)
+    [[ -n "${FAKE_INSPECT_FAIL:-}" ]] && { echo "ERROR: not found" >&2; exit 1; }
+    printf '{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"%s"}\n' \
+      "${FAKE_DIGEST:-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"; exit 0 ;;
+  compose)
+    [[ -n "${FAKE_RENDER_FAIL:-}" ]] && { echo "yaml: line 3: mapping values are not allowed" >&2; exit 15; }
+    exit 0 ;;
+  login) cat > /dev/null; echo "Login Succeeded"; exit 0 ;;
+esac
+exit 0

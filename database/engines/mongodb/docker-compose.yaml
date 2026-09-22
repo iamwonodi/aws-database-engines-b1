@@ -1,0 +1,31 @@
+# MongoDB on the development database host.
+#
+# The host (core's update.sh) runs this as Compose project db-mongodb and
+# supplies ENGINE_PORT, ENGINE_NAME and DATA_ROOT. ENGINE_IMAGE is written into
+# the published .env by this repository's publish step. The environment is the
+# secret-resolved scratch copy.
+#
+# Core's provision.sh authenticates as "admin" against the admin database: the
+# administrator secret's username field.
+
+services:
+  mongodb:
+    image: ${ENGINE_IMAGE}
+    restart: unless-stopped
+    env_file: .resolved/.env
+
+    ports:
+      - "${ENGINE_PORT}:27017"
+
+    # On the persistent data volume. Anywhere else, the compose guard refuses it.
+    volumes:
+      - ${DATA_ROOT}/${ENGINE_NAME}:/data/db
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+    stop_grace_period: 60s

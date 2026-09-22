@@ -1,0 +1,29 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+tfplan
+tfplan.txt
+
+# The host's secret-resolved scratch copy. Never committed, never published.
+.resolved/
+
+# Written by the deploy workflow
+engine-images.env
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# NOTE: database/engines/*/.env is committed on purpose. It holds only
+# __FROM_SECRET__ pointers and non-secret settings; validate-engines.sh refuses
+# a literal password, secret, token or key.

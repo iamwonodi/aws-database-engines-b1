@@ -1,0 +1,33 @@
+# PostgreSQL on the development database host.
+#
+# The host (core's update.sh) runs this as Compose project db-postgres and
+# supplies ENGINE_PORT, ENGINE_NAME and DATA_ROOT. ENGINE_IMAGE is written into
+# the published .env by this repository's publish step. The environment is the
+# secret-resolved scratch copy.
+#
+# Core's provision.sh connects as "postgres" over the container's local socket,
+# so the superuser keeps the image's default name.
+
+services:
+  postgres:
+    image: ${ENGINE_IMAGE}
+    restart: unless-stopped
+    env_file: .resolved/.env
+
+    ports:
+      - "${ENGINE_PORT}:5432"
+
+    # On the persistent data volume. Anywhere else, the compose guard refuses it.
+    volumes:
+      - ${DATA_ROOT}/${ENGINE_NAME}:/var/lib/postgresql/data
+
+    # Over TCP, not the socket: during first-boot initialisation the image runs
+    # a socket-only server, which must not count as ready.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+    stop_grace_period: 60s

@@ -1,0 +1,33 @@
+# MySQL on the development database host.
+#
+# The host (core's update.sh) runs this as Compose project db-mysql and supplies
+# ENGINE_PORT, ENGINE_NAME and DATA_ROOT. ENGINE_IMAGE is written into the
+# published .env by this repository's publish step. The environment is the
+# secret-resolved scratch copy.
+#
+# Core's provision.sh connects as root over the container's local socket.
+
+services:
+  mysql:
+    image: ${ENGINE_IMAGE}
+    restart: unless-stopped
+    env_file: .resolved/.env
+
+    ports:
+      - "${ENGINE_PORT}:3306"
+
+    # On the persistent data volume. Anywhere else, the compose guard refuses it.
+    volumes:
+      - ${DATA_ROOT}/${ENGINE_NAME}:/var/lib/mysql
+
+    # Over TCP: first-boot initialisation runs with networking off, which must
+    # not count as ready. "ping" succeeds without credentials once the server
+    # accepts connections.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+    stop_grace_period: 60s

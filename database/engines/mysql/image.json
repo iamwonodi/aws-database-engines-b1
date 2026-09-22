@@ -1,0 +1,4 @@
+{
+  "source": "mysql:8.4",
+  "platform": "linux/amd64"
+}

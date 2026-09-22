@@ -1,0 +1,66 @@
+name: Tests
+
+# Everything that can be proven without AWS: the engine definitions, the shell
+# scripts, formatting, the lock file, and that the Terraform root validates and
+# passes its mocked tests against the real provider and module.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+
+  engines:
+    name: Engines And Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      # With docker present, each compose file is also rendered.
+      - name: Validate Engine Definitions
+        run: bash scripts/ci/validate-engines.sh database
+
+      - name: Shellcheck
+        run: shellcheck -S warning scripts/*.sh scripts/ci/*.sh
+
+      - name: Script Tests
+        run: bash scripts/ci/tests/run-all.sh
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Provider Lock File
+        run: bash scripts/ci/check-lock-files.sh infrastructure/development
+
+      # No backend and no credentials: nothing is planned. The tests mock the
+      # provider and supply the platform contract.
+      - name: Validate And Test Development
+        working-directory: infrastructure/development
+        run: |
+          terraform init -backend=false -lockfile=readonly
+          terraform validate
+          terraform test

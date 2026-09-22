@@ -7,19 +7,23 @@ set -euo pipefail
 # The database host (core's update.sh) re-checks the registry and refuses a bad
 # one, but by then the engine folders are already in the bucket. This catches
 # the same mistakes on the pull request, plus what only this repository knows:
-# the allocated port range and the shape of each engine folder.
+# that each engine is reached on its own native port, and the shape of each
+# engine folder.
 #
 # registry.json   a JSON object keyed by engine name
 #                 name     ^[a-z0-9][a-z0-9-]{0,40}$ (the host's rule)
-#                 port     integer in the allocated range, unique across ALL
-#                          engines, active or not, so an allocation never moves
+#                 port     the engine's NATIVE port (5432, 3306, 27017), 1024-65535,
+#                          unique across ALL engines, active or not. The host
+#                          publishes the same port the engine listens on, so
+#                          development matches the managed database elsewhere
 #                 active   boolean, optional (the host treats absent as true)
 #
 # engines/<engine>/  for every registered engine
 #   docker-compose.yaml (or .yml)
 #       image: ${ENGINE_IMAGE}          the publish step supplies the ECR image
 #       env_file: .resolved/.env        the secret-resolved copy
-#       publishes ${ENGINE_PORT}
+#       publishes "${ENGINE_PORT}:<port>" where <port> is the registry's port:
+#       host port and container port are the same
 #       keeps its data under ${DATA_ROOT}/${ENGINE_NAME}
 #   .env
 #       KEY=VALUE lines or comments, no CR
@@ -35,16 +39,12 @@ set -euo pipefail
 # Usage: validate-engines.sh <database-dir>
 #
 # Environment (optional):
-#   ENGINE_PORT_MIN   lowest allocatable port   (default 20001)
-#   ENGINE_PORT_MAX   highest allocatable port  (default 20099)
 #   VALIDATE_RENDER   "false" skips the docker compose render
 # ==============================================================================
 
 DATABASE_DIR="${1:?Usage: validate-engines.sh <database-dir>}"
 DATABASE_DIR="${DATABASE_DIR%/}"
 
-PORT_MIN="${ENGINE_PORT_MIN:-20001}"
-PORT_MAX="${ENGINE_PORT_MAX:-20099}"
 RENDER="${VALIDATE_RENDER:-true}"
 
 REGISTRY="${DATABASE_DIR}/registry.json"
@@ -68,7 +68,7 @@ fi
 
 while IFS= read -r message; do
   [[ -n "${message}" ]] && err "${message}"
-done < <(jq -r --argjson min "${PORT_MIN}" --argjson max "${PORT_MAX}" '
+done < <(jq -r '
   (to_entries[]
     | .key as $name | .value as $v
     | if ($name | test("^[a-z0-9][a-z0-9-]{0,40}$") | not)
@@ -77,8 +77,8 @@ done < <(jq -r --argjson min "${PORT_MIN}" --argjson max "${PORT_MAX}" '
         then "registry: \"\($name)\" must be an object"
       elif (($v.port | type) != "number") or ($v.port != ($v.port | floor))
         then "registry: \"\($name)\" needs an integer port"
-      elif ($v.port < $min) or ($v.port > $max)
-        then "registry: \"\($name)\" port \($v.port) is outside the allocated range \($min)-\($max)"
+      elif ($v.port < 1024) or ($v.port > 65535)
+        then "registry: \"\($name)\" port \($v.port) must be from 1024 to 65535"
       elif ($v | has("active")) and (($v.active | type) != "boolean")
         then "registry: \"\($name)\" active must be true or false"
       elif (($v | keys) - ["port", "active"] | length) > 0
@@ -86,7 +86,7 @@ done < <(jq -r --argjson min "${PORT_MIN}" --argjson max "${PORT_MAX}" '
       else empty end),
   ([to_entries[] | select((.value | type) == "object" and (.value.port | type) == "number") | {key, port: .value.port}]
     | group_by(.port) | map(select(length > 1))[]
-    | "registry: port \(.[0].port) is allocated to more than one engine: \(map(.key) | join(", "))")
+    | "registry: port \(.[0].port) is used by more than one engine: \(map(.key) | join(", "))")
 ' "${REGISTRY}")
 
 mapfile -t ENGINES < <(jq -r 'keys[]' "${REGISTRY}")
@@ -100,7 +100,7 @@ SENSITIVE='(PASSWORD|SECRET|TOKEN|KEY)'
 SENTINEL='__FROM_SECRET__:[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z0-9_.-]+)?'
 
 check_compose() {
-  local engine="$1" file="$2"
+  local engine="$1" file="$2" port="$3" published
 
   grep -qE '^[[:space:]]*image:[[:space:]]*"?\$\{ENGINE_IMAGE\}"?[[:space:]]*$' "${file}" \
     || err "${engine}: the compose file must use image: \${ENGINE_IMAGE} (the publish step supplies the ECR image)"
@@ -111,8 +111,16 @@ check_compose() {
   grep -qE '^[[:space:]]*env_file:[[:space:]]*"?\.resolved/\.env"?[[:space:]]*$' "${file}" \
     || err "${engine}: the compose file must load env_file: .resolved/.env"
 
-  grep -qF '${ENGINE_PORT}:' "${file}" \
-    || err "${engine}: the compose file must publish \${ENGINE_PORT}"
+  # The host port IS the engine's port: exactly one "${ENGINE_PORT}:<port>"
+  # mapping, whose container port is the registry's port.
+  published="$(grep -oE '\$\{ENGINE_PORT\}:[0-9]+' "${file}" | cut -d: -f2 || true)"
+  if [[ -z "${published}" ]]; then
+    err "${engine}: the compose file must publish \"\${ENGINE_PORT}:<port>\""
+  elif [[ "$(wc -l <<< "${published}")" -ne 1 ]]; then
+    err "${engine}: the compose file must publish \${ENGINE_PORT} exactly once"
+  elif [[ "${published}" != "${port}" ]]; then
+    err "${engine}: the registry says port ${port} but the compose file publishes \${ENGINE_PORT}:${published}; the host port and the engine's port must be the same"
+  fi
 
   grep -qF '${DATA_ROOT}/${ENGINE_NAME}' "${file}" \
     || err "${engine}: the compose file must keep its data under \${DATA_ROOT}/\${ENGINE_NAME}"
@@ -167,12 +175,12 @@ check_image() {
 
 # Rendered in a scratch copy, so the source tree is never written to.
 render_compose() {
-  local engine="$1" dir="$2" file="$3" scratch
+  local engine="$1" dir="$2" file="$3" port="$4" scratch
   scratch="$(mktemp -d)"
   cp -R "${dir}/." "${scratch}/"
   mkdir -p "${scratch}/.resolved"
   cp "${scratch}/.env" "${scratch}/.resolved/.env" 2>/dev/null || : > "${scratch}/.resolved/.env"
-  printf 'ENGINE_IMAGE=example.invalid/engines/%s:0\nENGINE_PORT=20001\nENGINE_NAME=%s\nDATA_ROOT=/srv/data\n' "${engine}" "${engine}" > "${scratch}/.platform.env"
+  printf 'ENGINE_IMAGE=example.invalid/engines/%s:0\nENGINE_PORT=%s\nENGINE_NAME=%s\nDATA_ROOT=/srv/data\n' "${engine}" "${port}" "${engine}" > "${scratch}/.platform.env"
 
   if ! docker compose --project-directory "${scratch}" --file "${scratch}/$(basename "${file}")" \
       --env-file "${scratch}/.platform.env" config --quiet >/dev/null 2>&1; then
@@ -184,6 +192,7 @@ render_compose() {
 
 for engine in "${ENGINES[@]}"; do
   dir="${ENGINES_DIR}/${engine}"
+  port="$(jq -r --arg e "${engine}" '.[$e].port // empty' "${REGISTRY}" 2>/dev/null || true)"
 
   if [[ ! -d "${dir}" ]]; then
     err "${engine}: registered, but ${dir} does not exist"
@@ -198,14 +207,14 @@ for engine in "${ENGINES[@]}"; do
   if [[ -z "${compose}" ]]; then
     err "${engine}: no docker-compose.yaml"
   else
-    check_compose "${engine}" "${compose}"
+    check_compose "${engine}" "${compose}" "${port}"
   fi
 
   if [[ -f "${dir}/.env" ]]; then check_env "${engine}" "${dir}/.env"; else err "${engine}: no .env"; fi
   if [[ -f "${dir}/image.json" ]]; then check_image "${engine}" "${dir}/image.json"; else err "${engine}: no image.json"; fi
 
   if [[ -n "${compose}" && "${RENDER}" == "true" ]] && command -v docker >/dev/null 2>&1; then
-    render_compose "${engine}" "${dir}" "${compose}"
+    render_compose "${engine}" "${dir}" "${compose}" "${port}"
   fi
 done
 

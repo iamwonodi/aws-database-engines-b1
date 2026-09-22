@@ -7,7 +7,7 @@ export FAKE_LOG="${WORK}/calls.log" UPDATE_INTERVAL=0 UPDATE_TIMEOUT=30 UPDATE_E
 seq_dir(){ rm -rf "${WORK}/inv"; mkdir -p "${WORK}/inv"; export FAKE_INVOCATIONS_DIR="${WORK}/inv"; : > "${FAKE_LOG}"; }
 inv(){ printf '%s' "$2" > "${WORK}/inv/$1.json"; }
 run(){ bash "$U" acme-database-update acme af-south-1; }
-OK='[{"id":"i-db","status":"Success","out":"Engine: postgres (port 20001, active: true)"}]'
+OK='[{"id":"i-db","status":"Success","out":"Engine: postgres (port 5432, active: true)"}]'
 
 echo "== send-update.sh"
 seq_dir; inv 1 "$OK"

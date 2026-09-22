@@ -20,20 +20,22 @@ check "a compose file docker cannot render is refused"   rejects "could not rend
 unset FAKE_RENDER_FAIL
 
 fresh; reg '[1,2]';                                        check "a registry that is not an object"          rejects "JSON object"
-fresh; reg '{"Postgres":{"port":20001}}';                  check "an invalid engine name"                    rejects "not a valid engine name"
-fresh; reg '{"postgres":{"port":"20001"}}';                check "a string port"                             rejects "integer port"
-fresh; reg '{"postgres":{"port":5432}}';                   check "a port outside the range"                  rejects "outside the allocated range 20001-20099"
-fresh; reg '{"postgres":{"port":20001,"active":"yes"}}';   check "a non-boolean active"                      rejects "active must be true or false"
-fresh; reg '{"postgres":{"port":20001,"acitve":false}}';   check "a misspelt field"                          rejects "unknown fields: acitve"
-fresh; reg '{"postgres":{"port":20001,"active":false},"mysql":{"port":20001,"active":false}}'
-check "a shared port, even between inactive engines"     rejects "port 20001 is allocated to more than one engine"
-fresh; reg '{"redis":{"port":20009}}';                     check "a registered engine with no folder"        rejects "redis: registered"
-fresh; reg '{"postgres":{"port":20001}}'
+fresh; reg '{"Postgres":{"port":5432}}';                  check "an invalid engine name"                    rejects "not a valid engine name"
+fresh; reg '{"postgres":{"port":"5432"}}';                check "a string port"                             rejects "integer port"
+fresh; reg '{"postgres":{"port":80}}';                     check "a privileged port"                         rejects "port 80 must be from 1024 to 65535"
+fresh; reg '{"postgres":{"port":5432,"active":"yes"}}';   check "a non-boolean active"                      rejects "active must be true or false"
+fresh; reg '{"postgres":{"port":5432,"acitve":false}}';   check "a misspelt field"                          rejects "unknown fields: acitve"
+fresh; reg '{"postgres":{"port":5432,"active":false},"mysql":{"port":5432,"active":false}}'
+check "a shared port, even between inactive engines"     rejects "port 5432 is used by more than one engine"
+fresh; reg '{"redis":{"port":6379}}';                     check "a registered engine with no folder"        rejects "redis: registered"
+fresh; reg '{"postgres":{"port":5432}}'
 out="$(bash "$V" "${WORK}/db" 2>&1)"
 check "unregistered folders only warn"                    bash -c "grep -q 'WARNING: .*mysql/ is not in registry.json' <<< \"$out\""
 check "an absent active counts as active"                 bash -c "grep -q 'Active: postgres' <<< \"$out\""
-ENGINE_PORT_MIN=30000 ENGINE_PORT_MAX=30010 bash "$V" "${WORK}/db" >/dev/null 2>&1
-check "the range can be overridden"                       test $? -ne 0
+fresh; reg '{"postgres":{"port":5433},"mysql":{"port":3306},"mongodb":{"port":27017}}'
+check "a host port that is not the engine's port"        rejects 'registry says port 5433 but the compose file publishes ${ENGINE_PORT}:5432'
+fresh; sed -i 's|"${ENGINE_PORT}:3306"|"${ENGINE_PORT}:3306"\n      - "${ENGINE_PORT}:33060"|' "${WORK}/db/engines/mysql/docker-compose.yaml"
+check "the engine port published twice"                  rejects 'publish ${ENGINE_PORT} exactly once'
 
 fresh; sed -i 's|image: ${ENGINE_IMAGE}|image: postgres:17|' "${WORK}/db/engines/postgres/docker-compose.yaml"
 check "an image not from the publish step"               rejects "image: \${ENGINE_IMAGE}"
@@ -42,7 +44,7 @@ check "the unresolved .env as env_file"                  rejects "env_file: .res
 fresh; sed -i 's|${DATA_ROOT}/${ENGINE_NAME}|/var/lib/pg|' "${WORK}/db/engines/postgres/docker-compose.yaml"
 check "data kept off the persistent volume"              rejects "under \${DATA_ROOT}/\${ENGINE_NAME}"
 fresh; sed -i 's|"${ENGINE_PORT}:27017"|"27017:27017"|' "${WORK}/db/engines/mongodb/docker-compose.yaml"
-check "a port that is not the registry's"                rejects "publish \${ENGINE_PORT}"
+check "a fixed host port instead of the registry's"      rejects 'publish "${ENGINE_PORT}:<port>"'
 fresh; rm "${WORK}/db/engines/mysql/docker-compose.yaml"
 check "a folder with no compose file"                    rejects "mysql: no docker-compose.yaml"
 

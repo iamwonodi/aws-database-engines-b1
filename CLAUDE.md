@@ -14,7 +14,7 @@ This is a **blueprint**: many projects clone it. Never commit anything project-s
 - **Core** publishes `/<project>/platform/config` (schema version 1), whose `buckets.deploy`, `database.update_document`, `ecr_registry_url`, `isolated.security_group_id` and `tiers.<tier>.security_group_id` this repository uses. Core's `engines-role` defines what this repository may do.
 - **The database host** (core's `update.sh`) reads `database/registry.json` and `database/engines/<engine>/`. The registry rules and the reserved names (`DATA_ROOT`, `ENGINE_NAME`, `ENGINE_PORT`, `CORE_ROOT_SECRET_ARN`) are its; `ENGINE_IMAGE` is this repository's.
 - **Core's provision.sh** finds an engine by Compose project `db-<engine>` and knows only `postgres`, `mysql` and `mongodb`, connecting as `postgres`, `root` and `admin`.
-- **Services** read `/<project>/database/engines/<engine>/port`.
+- **Services** read `/<project>/database/engines/<engine>/port`. Each engine is on its native port (5432, 3306, 27017), one engine per type shared by every service; `validate-engines.sh` requires the published host port to equal the engine's port.
 
 ## Checks before a commit
 

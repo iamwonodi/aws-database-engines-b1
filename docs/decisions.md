@@ -3,7 +3,9 @@
 | Decision | Why |
 | --- | --- |
 | The blueprint ships postgres, mysql and mongodb, all inactive | Core has provisioning for all three; each project opts into what it uses, and nothing runs (or costs memory on the host) by default |
-| Ports come from 20001–20099, unique across every engine, active or not | An allocation must never move: services read the port, and a reactivated engine should come back where it was |
+| One engine per type, shared by every service, each service in its own database with its own user | Logical separation inside one engine is what staging and production get from RDS; per-service engines would multiply memory on one host for no isolation a database user does not already give |
+| Each engine is published on its native port (5432, 3306, 27017), and the validator requires host port = engine port | Development connects exactly as staging and production do. Uniqueness is still enforced, because engines can share a default (MariaDB and MySQL, PostgreSQL variants). Accepted cost: two instances of one engine cannot run side by side, so a major upgrade is stop, upgrade, start |
+| Services still read the port from `/<project>/database/engines/<engine>/port` | One discovery path, unchanged in service-infra and the application; nothing hard-codes a port |
 | Engine ports are opened from the private and internal tiers' security groups | Those are where services run; security-group references follow the fleets as they scale, where CIDRs would not |
 | Ports open and close after the host has acted | A newly active engine is running before services can reach or discover it; a deactivated one has stopped before its port closes |
 | Only active engines are mirrored and published; the engines prefix syncs with `--delete` | An inactive engine is never started, and the host never stops an engine because its folder vanished, so there is nothing to keep |

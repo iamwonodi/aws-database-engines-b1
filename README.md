@@ -31,9 +31,9 @@ Everything about the environment comes from core's platform contract, `/<project
 
 ```json
 {
-  "postgres": { "port": 20001, "active": false },
-  "mysql":    { "port": 20002, "active": false },
-  "mongodb":  { "port": 20003, "active": false }
+  "postgres": { "port": 5432, "active": false },
+  "mysql":    { "port": 3306, "active": false },
+  "mongodb":  { "port": 27017, "active": false }
 }
 ```
 
@@ -47,14 +47,14 @@ The blueprint ships all three engines **inactive**: a project opts in by setting
 
 A database never stops because a file disappeared: only an explicit `"active": false` stops one. Nothing ever runs `down` or deletes data.
 
-Ports are allocated from **20001–20099** and are unique across every engine, active or not, so an allocation never moves.
+**Each engine is reached on its own native port**: the host publishes the same port the engine listens on (`"${ENGINE_PORT}:5432"` with port 5432). One engine per type serves every service, each in its own database with its own user (created by core's provisioning), so development connects exactly as staging and production do to RDS. Ports are unique across every engine, active or not. The trade-off: two instances of one engine (PostgreSQL 16 beside 17 for an upgrade, or MariaDB beside MySQL, both 3306) cannot run at once.
 
 ## An engine folder
 
 ```text
 database/engines/<engine>/
   docker-compose.yaml   image: ${ENGINE_IMAGE}, env_file: .resolved/.env,
-                        "${ENGINE_PORT}:<container port>",
+                        "${ENGINE_PORT}:<the same port>",
                         ${DATA_ROOT}/${ENGINE_NAME}:<data directory>
   .env                  settings, and secrets as pointers only
   image.json            {"source": "postgres:17", "platform": "linux/amd64"}
@@ -63,7 +63,7 @@ database/engines/<engine>/
 | Name | Provided by | Meaning |
 | --- | --- | --- |
 | `ENGINE_IMAGE` | the publish step | the mirrored ECR image, appended to the published `.env` |
-| `ENGINE_PORT` | the host | the port from the registry |
+| `ENGINE_PORT` | the host | the port from the registry: the engine's native port |
 | `ENGINE_NAME` | the host | the folder name |
 | `DATA_ROOT` | the host | the persistent data volume. Data anywhere else is refused |
 | `CORE_ROOT_SECRET_ARN` | the host | the database administrator secret (`username`, `root_password`) |

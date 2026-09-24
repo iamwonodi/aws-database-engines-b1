@@ -19,7 +19,7 @@ database/engines/<engine>/           │
                                                    database/registry.json       (last)
                    send         ──► <project>-database-update ──► database host
                                                                    update.sh: compose up / stop
-                   terraform    ──► isolated SG: engine port from the private and internal tiers
+                   terraform    ──► isolated SG: engine port from the private and internal tiers, and the team's tools
                                     SSM /<project>/database/engines/<engine>/port
                                                                    ▲
 service infra repository ── reads the port, provisions its database ┘

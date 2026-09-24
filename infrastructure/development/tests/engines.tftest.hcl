@@ -11,6 +11,7 @@ mock_provider "aws" {
           "schema_version": 1,
           "hosting_model": "shared",
           "isolated": { "security_group_id": "sg-0iso" },
+          "tools": { "security_group_id": "sg-0tools", "subnet_ids": ["subnet-0p1"] },
           "tiers": {
             "private":  { "security_group_id": "sg-0priv", "alb_security_group_id": "sg-0privalb" },
             "internal": { "security_group_id": "sg-0int",  "alb_security_group_id": "sg-0intalb" }
@@ -40,8 +41,8 @@ run "the_blueprint_opens_nothing_until_an_engine_is_activated" {
   }
 
   assert {
-    condition     = local.source_security_groups == { private = "sg-0priv", internal = "sg-0int" }
-    error_message = "engines are reachable from the shared fleets' security groups"
+    condition     = local.source_security_groups == { private = "sg-0priv", internal = "sg-0int", tools = "sg-0tools" }
+    error_message = "engines are reachable from the shared fleets' security groups and from the team's tools"
   }
 }
 
@@ -78,6 +79,35 @@ run "a_contract_without_tier_security_groups_is_refused" {
     target = data.aws_ssm_parameter.platform
     values = {
       value = "{\"schema_version\": 1, \"hosting_model\": \"shared\", \"isolated\": {\"security_group_id\": \"sg-0iso\"}, \"tiers\": {}}"
+    }
+  }
+
+  expect_failures = [terraform_data.contract]
+}
+
+run "a_contract_from_before_the_tools_group_still_works" {
+  command = plan
+
+  override_data {
+    target = data.aws_ssm_parameter.platform
+    values = {
+      value = "{\"schema_version\": 1, \"hosting_model\": \"shared\", \"isolated\": {\"security_group_id\": \"sg-0iso\"}, \"tiers\": {\"private\": {\"security_group_id\": \"sg-0priv\"}}}"
+    }
+  }
+
+  assert {
+    condition     = local.source_security_groups == { private = "sg-0priv" }
+    error_message = "without core's tools group the engines are reachable from the tiers alone, as before"
+  }
+}
+
+run "the_tools_group_alone_is_not_enough" {
+  command = plan
+
+  override_data {
+    target = data.aws_ssm_parameter.platform
+    values = {
+      value = "{\"schema_version\": 1, \"hosting_model\": \"shared\", \"isolated\": {\"security_group_id\": \"sg-0iso\"}, \"tools\": {\"security_group_id\": \"sg-0tools\"}, \"tiers\": {}}"
     }
   }
 

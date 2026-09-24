@@ -4,7 +4,8 @@
 # For every ACTIVE engine in database/registry.json:
 #
 #   - its port is opened on the isolated tier's security group, from each tier
-#     whose services may connect to it (the shared fleets' security groups), and
+#     whose services may connect to it (the shared fleets' security groups) and
+#     from the team's own tools (core's team-tools group, a database GUI), and
 #   - its port is published at /<project>/database/engines/<engine>/port, which
 #     is where services read it (docs/platform-contract.md in core).
 #
@@ -35,10 +36,18 @@ locals {
 
   # The shared fleets' security groups: where the services that connect to the
   # engines run. A tier without one (a dedicated environment) contributes none.
-  source_security_groups = {
+  tier_security_groups = {
     for tier, config in try(local.platform.tiers, {}) : tier => config.security_group_id
     if try(config.security_group_id, null) != null
   }
+
+  # And the team's own tools (a database GUI), which run on hosts of their own
+  # wearing core's team-tools group. A contract from before core published it
+  # simply adds none.
+  source_security_groups = merge(
+    local.tier_security_groups,
+    try(local.platform.tools.security_group_id, null) == null ? {} : { tools = local.platform.tools.security_group_id },
+  )
 
   ingress_rules = {
     for pair in setproduct(keys(local.active_engines), keys(local.source_security_groups)) :
@@ -68,7 +77,7 @@ resource "terraform_data" "contract" {
     }
 
     precondition {
-      condition     = length(local.source_security_groups) > 0
+      condition     = length(local.tier_security_groups) > 0
       error_message = "The platform contract publishes no tier security group to allow the engine ports from."
     }
   }
@@ -81,7 +90,7 @@ module "engine_ingress" {
   security_group_id            = local.platform.isolated.security_group_id
   referenced_security_group_id = local.source_security_groups[each.value.tier]
 
-  description = "${each.value.engine} database engine from the ${each.value.tier} tier"
+  description = each.value.tier == "tools" ? "${each.value.engine} database engine from the team's tools" : "${each.value.engine} database engine from the ${each.value.tier} tier"
 
   ip_protocol = "tcp"
   from_port   = each.value.port

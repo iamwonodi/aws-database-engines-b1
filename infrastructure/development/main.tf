@@ -84,7 +84,7 @@ resource "terraform_data" "contract" {
 }
 
 module "engine_ingress" {
-  source   = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.0"
+  source   = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
   for_each = local.ingress_rules
 
   security_group_id            = local.platform.isolated.security_group_id

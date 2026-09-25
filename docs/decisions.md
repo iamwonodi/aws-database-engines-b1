@@ -16,3 +16,4 @@
 | MySQL root is restricted to `localhost` | provision.sh uses root only inside the container; the image's default (`%`) would offer it on the published port |
 | The deploy re-plans at merge instead of applying the pull request's plan artifact | The plan depends only on `registry.json` and the platform contract, and the pull request shows the same plan; the configuration is too small to justify the artifact machinery service-infra needs |
 | `validate-engines.sh` refuses literal passwords, secrets, tokens and keys | The `.env` files are committed; the check is what makes that safe |
+| This repository has no environment list of its own: it serves development only | Its whole job is the engines on development's database host; a project not running development does without it |

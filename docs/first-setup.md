@@ -1,6 +1,6 @@
 # First setup
 
-Core must already be applied in the development account.
+Core must already be applied in the development account. This repository serves development only: a project whose core does not run development (its `environments.json`) skips it.
 
 ## 1. Create the repository from the template
 

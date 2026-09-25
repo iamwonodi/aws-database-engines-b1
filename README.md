@@ -4,7 +4,7 @@ The **platforms team's** repository. It decides which database engines run on th
 
 This is a **blueprint**: each project creates its own copy with GitHub's **Use this template** and runs `scripts/init-engines.sh`. It pairs with the core platform ([`aws-core-infra-b1`](https://github.com/iamwonodi/aws-core-infra-b1)), which owns the host, and with each service's infrastructure repository ([`aws-service-infra-b1`](https://github.com/iamwonodi/aws-service-infra-b1)), which provisions its own database on an engine published here.
 
-Staging and production do not use this repository: they run a managed RDS instance that core creates.
+Staging and production do not use this repository: they run managed databases that core creates (RDS, DocumentDB). **A project that does not run development** (core's `environments.json`) does not need this repository at all.
 
 ## How it fits
 

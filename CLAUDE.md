@@ -27,7 +27,7 @@ terraform fmt -recursive
 
 ## Open items
 
-- Nothing here has run against real AWS. Watch the first deploy for: `ec2:AuthorizeSecurityGroupIngress` with a referenced security group and tags under the engines role, the healthchecks passing inside `compose up --wait`, and MongoDB's first boot (its temporary init server can answer the healthcheck early).
-- `infrastructure/development/.terraform.lock.hcl` must be generated and committed (docs/first-setup.md); CI fails without it.
+- Nothing here has run against real AWS (core's `docs/first-real-run.md` gathers what to watch across every repository). Watch the first deploy for: `ec2:AuthorizeSecurityGroupIngress` with a referenced security group and tags under the engines role, the healthchecks passing inside `compose up --wait`, and MongoDB's first boot (its temporary init server can answer the healthcheck early).
+- `infrastructure/development/.terraform.lock.hcl` is committed, locked for every platform; CI fails without it. Re-lock and commit after a provider change (docs/first-setup.md).
 - Root password rotation is not propagated: the images read the administrator password only on first boot.
 - Say **engine registry** (`registry.json`), **port registry** or **ECR registry**, never "the registry".

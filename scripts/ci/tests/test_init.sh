@@ -30,6 +30,7 @@ check "the deploy requires the reviewer"                   bash -c "grep -A1 'en
 check "the plan environment exists"                        grep -q 'environments/development-plan --input' "${FAKE_GH_LOG}"
 check "AWS_REGION is set on both environments"            bash -c "[ \$(grep -c 'variable set AWS_REGION --repo acme/database-engines' '${FAKE_GH_LOG}') -eq 2 ]"
 check "core's tfvars lines are printed with the IDs"       bash -c "grep -q 'database_engines_repository          = \"acme/database-engines\"' '${WORK}/out.txt' && grep -q 'owner_id = \"123\"' '${WORK}/out.txt' && grep -q 'repository_id       = \"987\"' '${WORK}/out.txt'"
+check "the all-platform lock command is printed"           grep -q 'terraform providers lock -platform=windows_amd64 -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64' "${WORK}/out.txt"
 fresh; run >/dev/null 2>&1; run > "${WORK}/out2.txt" 2>&1
 check "re-running is safe"                                 bash -c "[ \$? -eq 0 ] && grep -qx 'project_name = \"acme\"' '$D/terraform.tfvars'"
 check "no reviewers is warned about"                       grep -q 'WARNING: no --reviewers' "${WORK}/out2.txt"

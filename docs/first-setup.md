@@ -34,7 +34,7 @@ scripts/fetch-role-arn.sh --core OWNER/CORE-REPOSITORY
 
 ## 4. Commit the provider lock file
 
-Every platform is locked, one platform per call so a dropped connection costs only that platform. In PowerShell:
+Every platform is locked. A plain `terraform init` records the hashes of your machine only, and `check-lock-files.sh` (and CI's `-lockfile=readonly`) rejects a lock file with fewer than four `h1:` hashes per provider. One platform per call, so a dropped connection costs only that platform. In PowerShell:
 
 ```powershell
 terraform -chdir=infrastructure/development init -backend=false

@@ -186,6 +186,8 @@ echo
 echo "Checking that no placeholder remains."
 bash "${REPO_ROOT}/scripts/ci/check-placeholders.sh" "${DIR}"
 
+LOCK_COMMAND='terraform providers lock -platform=windows_amd64 -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64'
+
 cat <<NEXT
 
 Done. Next:
@@ -200,7 +202,13 @@ Done. Next:
   2. Once core has applied it, connect this repository to its role:
        scripts/fetch-role-arn.sh --core OWNER/CORE-REPOSITORY
 
-  3. Generate and commit infrastructure/development/.terraform.lock.hcl
-     (docs/first-setup.md), commit these changes and open a pull request.
+  3. Generate and commit infrastructure/development/.terraform.lock.hcl for
+     every platform (docs/first-setup.md). A plain 'terraform init' locks only
+     the machine it runs on, and CI rejects that. From that folder:
+
+       terraform init -backend=false
+       ${LOCK_COMMAND}
+
+     Then commit these changes and open a pull request.
 
 NEXT

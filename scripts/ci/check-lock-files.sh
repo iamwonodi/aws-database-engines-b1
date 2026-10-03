@@ -11,7 +11,11 @@ set -euo pipefail
 #
 # For each directory given, this fails unless:
 #   - .terraform.lock.hcl is tracked by git, and
-#   - it lists every provider the directory's own required_providers declares.
+#   - it lists every provider the directory's own required_providers declares, and
+#   - every provider block carries at least MIN_H1 "h1:" hashes, one per locked
+#     platform. A plain `terraform init` records the hashes of the machine it ran
+#     on only; CI (Linux) then rejects the cached package at `terraform validate`,
+#     long after the commit that caused it.
 #
 # Providers that only child modules declare are checked by Terraform itself: the
 # workflows run `terraform init -lockfile=readonly`, which refuses a lock file
@@ -23,6 +27,7 @@ set -euo pipefail
 [[ $# -gt 0 ]] || { echo "Usage: check-lock-files.sh <root-dir>..." >&2; exit 1; }
 
 LOCK_COMMAND='terraform providers lock -platform=windows_amd64 -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64'
+MIN_H1=4
 FAILED=0
 
 for DIR in "$@"; do
@@ -53,6 +58,22 @@ for DIR in "$@"; do
 
   if [[ ${#MISSING[@]} -gt 0 ]]; then
     echo "::error file=${LOCK}::${LOCK} does not lock ${MISSING[*]}. Run 'terraform -chdir=${DIR} init -upgrade', then '${LOCK_COMMAND}' there, and commit it."
+    FAILED=1
+    continue
+  fi
+
+  # <provider> <number of h1: hashes>, one line per provider block.
+  THIN=()
+  while read -r PROVIDER COUNT; do
+    [[ "${COUNT}" -ge "${MIN_H1}" ]] || THIN+=("${PROVIDER} has ${COUNT}")
+  done < <(awk '
+    /^provider "/ { name = $2; gsub(/"/, "", name); sub(/^registry\.terraform\.io\//, "", name); n = 0; inblock = 1; next }
+    inblock && /^[[:space:]]*"h1:/ { n++ }
+    inblock && /^}/ { print name, n; inblock = 0 }
+  ' "${LOCK}")
+
+  if [[ ${#THIN[@]} -gt 0 ]]; then
+    echo "::error file=${LOCK}::${LOCK} is not locked for every platform (needs at least ${MIN_H1} h1: hashes per provider): $(IFS=';'; echo "${THIN[*]}"). Run '${LOCK_COMMAND}' in ${DIR}, and commit it."
     FAILED=1
     continue
   fi
